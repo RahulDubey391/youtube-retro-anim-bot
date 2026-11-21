@@ -1,0 +1,14 @@
+.env
+CREDS.txt
+.venv/
+__pycache__/
+*.pyc
+client_secrets.json
+client_secret_*.json
+token.json
+token_*.json
+output/
+*.mp4
+*.mp3
+*.wav
+

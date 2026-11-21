@@ -1,0 +1,104 @@
+name: YouTube Content Automation
+
+on:
+  workflow_dispatch:
+    inputs:
+      format:
+        description: "Video format (shorts or long)"
+        required: false
+        default: "shorts"
+        type: choice
+        options:
+          - shorts
+          - long
+      privacy:
+        description: "YouTube privacy status"
+        required: false
+        default: "public"
+        type: choice
+        options:
+          - public
+          - private
+          - unlisted
+      niche:
+        description: "Target niche"
+        required: false
+        default: "Mind-Blowing Facts, Psychology & History"
+        type: string
+      use_veo:
+        description: "Use Vertex AI Veo 3.1 (falls back to image animation on error)"
+        required: false
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+
+jobs:
+  generate-and-upload:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install system fonts and Python dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y fonts-dejavu-core
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Write credentials from GitHub Secrets
+        env:
+          GOOGLE_CLIENT_SECRETS_JSON: ${{ secrets.GOOGLE_CLIENT_SECRETS_JSON }}
+          YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+          DRIVE_TOKEN_JSON: ${{ secrets.DRIVE_TOKEN_JSON }}
+          GCP_SA_KEY_JSON: ${{ secrets.GCP_SA_KEY_JSON }}
+        run: |
+          printf '%s' "$GOOGLE_CLIENT_SECRETS_JSON" > client_secrets.json
+          printf '%s' "$YOUTUBE_TOKEN_JSON" > token_youtube.json
+          printf '%s' "$DRIVE_TOKEN_JSON" > token_drive.json
+          if [ -n "$GCP_SA_KEY_JSON" ]; then
+            printf '%s' "$GCP_SA_KEY_JSON" > gcp-sa-key.json
+          fi
+
+      - name: Run YouTube Content Agent
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_TEXT_MODEL: gemini-3.8-flash
+          GEMINI_IMAGE_MODEL: gemini-3.1-flash-image
+          GEMINI_VEO_MODEL: veo-3.1-fast-generate-001
+          USE_VEO: ${{ inputs.use_veo != '' && inputs.use_veo || 'true' }}
+          USE_VERTEXAI_VEO: "true"
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: us-central1
+          GOOGLE_APPLICATION_CREDENTIALS: gcp-sa-key.json
+          GOOGLE_DRIVE_FOLDER_ID: ${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}
+          YOUTUBE_PRIVACY_STATUS: ${{ inputs.privacy || 'private' }}
+          VISUAL_STYLE: retro_cartoon
+        run: |
+          FORMAT="${{ inputs.format || 'shorts' }}"
+          NICHE="${{ inputs.niche || 'Mind-Blowing Facts, Psychology & History' }}"
+          PRIVACY="${{ inputs.privacy || 'private' }}"
+          python -u main.py --format "$FORMAT" --niche "$NICHE" --privacy "$PRIVACY" --style retro_cartoon
+
+      - name: Persist topic history to prevent duplicates
+        run: |
+          if [ -f output/history.json ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add -f output/history.json
+            git commit -m "chore: update generated topic history" || echo "No history changes"
+            git push || true
+          fi
+
+      - name: Clean up temporary secret files
+        if: always()
+        run: rm -f client_secrets.json token_youtube.json token_drive.json gcp-sa-key.json
+
