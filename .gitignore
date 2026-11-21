@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 client_secrets.json
 client_secret_*.json
+gen-lang-client-*.json
 token.json
 token_*.json
 output/
